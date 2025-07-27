@@ -27,7 +27,7 @@ Vizor is built on the principle of **local-first autonomy**. It runs entirely on
 
 ```bash
 # Clone and install
-git clone https://github.com/your-org/vizor.git
+git clone (https://github.com/lazerwild165/vizor.git)
 cd vizor
 pip install -e .
 
