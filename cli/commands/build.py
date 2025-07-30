@@ -16,8 +16,6 @@ import json
 # Add parent directories to path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from plugins.wrapper_generator import WrapperGenerator
-from plugins.plugin_registry import PluginRegistry
 from config.settings import VizorConfig
 
 console = Console()
@@ -38,6 +36,10 @@ def api(
     with proper authentication and error handling.
     """
     try:
+        # Import only when needed
+        from plugins.wrapper_generator import WrapperGenerator
+        from plugins.plugin_registry import PluginRegistry
+        
         config = VizorConfig()
         generator = WrapperGenerator(config)
         
@@ -74,7 +76,7 @@ def api(
         
         # Register the plugin
         registry = PluginRegistry(config)
-        registry.register_plugin(result['wrapper_path'])
+        registry.register_plugin(Path(result['wrapper_path']))
         
         console.print(f"[green]📦 Plugin registered in Vizor[/green]")
         
@@ -96,6 +98,10 @@ def plugin(
     and proper structure for Vizor integration.
     """
     try:
+        # Import only when needed
+        from plugins.wrapper_generator import WrapperGenerator
+        from plugins.plugin_registry import PluginRegistry
+        
         config = VizorConfig()
         generator = WrapperGenerator(config)
         
@@ -143,6 +149,9 @@ def test_plugin(
     it meets Vizor standards and works correctly.
     """
     try:
+        # Import only when needed
+        from plugins.plugin_registry import PluginRegistry
+        
         config = VizorConfig()
         registry = PluginRegistry(config)
         
@@ -165,7 +174,7 @@ def test_plugin(
             console.print(Panel(
                 f"[green]✅ All tests passed![/green]\n"
                 f"[dim]Tests run: {test_results['tests_run']}[/dim]\n"
-                f"[dim]Warnings: {test_results['warnings']}[/dim]",
+                f"[dim]Warnings: {len(test_results.get('warnings', []))}[/dim]",
                 title="🧪 Test Results",
                 border_style="green"
             ))
@@ -173,15 +182,14 @@ def test_plugin(
             console.print(Panel(
                 f"[red]❌ Tests failed![/red]\n"
                 f"[dim]Tests run: {test_results['tests_run']}[/dim]\n"
-                f"[dim]Failures: {test_results['failures']}[/dim]\n"
-                f"[dim]Errors: {test_results['errors']}[/dim]",
+                f"[dim]Errors: {len(test_results.get('errors', []))}[/dim]",
                 title="🧪 Test Results",
                 border_style="red"
             ))
             
-            if test_results.get('error_details'):
+            if test_results.get('errors'):
                 console.print("\n[red]Error Details:[/red]")
-                for error in test_results['error_details']:
+                for error in test_results['errors']:
                     console.print(f"[dim]• {error}[/dim]")
         
     except Exception as e:
@@ -200,6 +208,9 @@ def register_plugin(
     available for use in commands and workflows.
     """
     try:
+        # Import only when needed
+        from plugins.plugin_registry import PluginRegistry
+        
         config = VizorConfig()
         registry = PluginRegistry(config)
         
@@ -248,6 +259,9 @@ def list_plugins(
     and their status.
     """
     try:
+        # Import only when needed
+        from plugins.plugin_registry import PluginRegistry
+        
         config = VizorConfig()
         registry = PluginRegistry(config)
         
@@ -290,6 +304,9 @@ def update_plugins(
     Part of Vizor's self-growth capabilities.
     """
     try:
+        # Import only when needed
+        from plugins.plugin_registry import PluginRegistry
+        
         config = VizorConfig()
         registry = PluginRegistry(config)
         

@@ -44,6 +44,7 @@ class PrivacyConfig:
     log_queries: bool = True
     log_responses: bool = False
 
+
 @dataclass
 class LearningConfig:
     """Learning and adaptation configuration"""
@@ -294,3 +295,5 @@ OLLAMA_HOST=http://localhost:11434
             self.privacy_config.cloud_fallback_enabled and
             (self.get_api_key('openai') or self.get_api_key('anthropic'))
         )
+    
+

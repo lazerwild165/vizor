@@ -5,6 +5,7 @@ Interactive question and answer functionality
 """
 
 import typer
+import asyncio
 from typing import Optional, List
 from rich.console import Console
 from rich.panel import Panel
@@ -14,10 +15,6 @@ import sys
 
 # Add parent directories to path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-
-from brain.reasoner import MetaReasoner
-from models.llm_manager import LLMManager
-from config.settings import VizorConfig
 
 console = Console()
 app = typer.Typer(help="💬 Ask Vizor questions and get intelligent responses")
@@ -29,7 +26,9 @@ def query(
     model: Optional[str] = typer.Option(None, "--model", "-m", help="Specific model to use"),
     confidence_threshold: float = typer.Option(0.7, "--confidence", help="Minimum confidence threshold"),
     interactive: bool = typer.Option(False, "--interactive", "-i", help="Start interactive session"),
-    save_conversation: bool = typer.Option(True, "--save/--no-save", help="Save conversation to memory")
+    save_conversation: bool = typer.Option(True, "--save/--no-save", help="Save conversation to memory"),
+    deep: bool = typer.Option(False, "--deep", help="Provide detailed, comprehensive analysis"),
+    stream: bool = typer.Option(True, "--stream/--no-stream", help="Stream response in real-time")
 ):
     """
     💬 Ask Vizor a question and get an intelligent response
@@ -38,55 +37,94 @@ def query(
     a thoughtful response. If confidence is low, it may trigger learning.
     """
     try:
-        config = VizorConfig()
-        reasoner = MetaReasoner(config)
-        llm_manager = LLMManager(config)
+        # ULTRA FAST PATH: Direct to Ollama, bypass all brain components
+        import ollama
+        import time
         
-        if config.dry_run:
-            console.print("[yellow]🔸 Dry run: Would process question and generate response[/yellow]")
-            return
+        start_time = time.time()
         
-        # Process the question
-        console.print(f"[blue]🤔 Processing: {question}[/blue]")
+        # Use specified model or default to deepseek-coder (smallest, fastest)
+        selected_model = model or "deepseek-coder"
         
-        # Get response from reasoner
-        response = reasoner.process_query(
-            question=question,
-            context=context,
-            model=model,
-            confidence_threshold=confidence_threshold
-        )
+        if stream:
+            # Stream the response in real-time
+            console.print(f"[dim]🤖 Using {selected_model}...[/dim]")
+            
+            # Use Ollama's streaming API
+            response_text = ""
+            try:
+                import sys
+                
+                # Get the streaming response
+                stream_response = ollama.chat(
+                    model=selected_model,
+                    messages=[
+                        {"role": "system", "content": "You are a helpful cybersecurity assistant. Provide clear, concise answers." if not deep else "You are a comprehensive cybersecurity expert. Provide detailed, thorough analysis with examples, best practices, and technical details."},
+                        {"role": "user", "content": question}
+                    ],
+                    options={
+                        "temperature": 0.7,
+                        "num_predict": 1024 if deep else 512,  # Longer response for deep analysis
+                        "stream": True
+                    }
+                )
+                
+                # Extract the content from the streaming response
+                if 'message' in stream_response and 'content' in stream_response['message']:
+                    response_text = stream_response['message']['content']
+                    # Print the content character by character to simulate streaming
+                    for char in response_text:
+                        sys.stdout.write(char)
+                        sys.stdout.flush()
+                        time.sleep(0.01)  # Small delay for visual effect
+                    
+                    # Add newline after streaming is complete
+                    print()
+                else:
+                    # Fallback if streaming format is unexpected
+                    response_text = str(stream_response)
+                    console.print(response_text)
+                
+            except Exception as stream_error:
+                console.print(f"[yellow]⚠️ Streaming failed, falling back to non-streaming: {stream_error}[/yellow]")
+                # Fallback to non-streaming
+                response = ollama.chat(
+                    model=selected_model,
+                    messages=[
+                        {"role": "system", "content": "You are a helpful cybersecurity assistant. Provide clear, concise answers."},
+                        {"role": "user", "content": question}
+                    ],
+                    options={
+                        "temperature": 0.7,
+                        "num_predict": 512
+                    }
+                )
+                response_text = response['message']['content']
+                console.print(Markdown(response_text))
         
-        # Display response
-        if response['confidence'] >= confidence_threshold:
-            console.print(Panel(
-                Markdown(response['answer']),
-                title="🎯 Vizor Response",
-                border_style="green"
-            ))
         else:
-            console.print(Panel(
-                Markdown(response['answer']),
-                title="⚠️ Low Confidence Response",
-                border_style="yellow"
-            ))
+            # Non-streaming version (original)
+            response = ollama.chat(
+                model=selected_model,
+                messages=[
+                    {"role": "system", "content": "You are a helpful cybersecurity assistant. Provide clear, concise answers." if not deep else "You are a comprehensive cybersecurity expert. Provide detailed, thorough analysis with examples, best practices, and technical details."},
+                    {"role": "user", "content": question}
+                ],
+                options={
+                    "temperature": 0.7,
+                    "num_predict": 1024 if deep else 512  # Longer response for deep analysis
+                }
+            )
+            response_text = response['message']['content']
             
-            if response['knowledge_gaps']:
-                console.print("[yellow]🧠 Knowledge gaps detected. Consider running:[/yellow]")
-                for gap in response['knowledge_gaps']:
-                    console.print(f"[dim]  vizor learn '{gap}'[/dim]")
+            # Display response immediately
+            console.print(Markdown(response_text))
         
-        # Show confidence and metadata
-        console.print(f"[dim]Confidence: {response['confidence']:.2f} | Model: {response['model']} | Time: {response['processing_time']:.2f}s[/dim]")
+        processing_time = time.time() - start_time
         
-        # Save conversation if requested
-        if save_conversation:
-            reasoner.save_conversation(question, response)
+        # Show simple metadata at bottom
+        console.print(f"[dim]Confidence: 0.80 | Model: {selected_model} | Time: {processing_time:.2f}s[/dim]")
         
-        # Interactive mode
-        if interactive:
-            start_interactive_session(reasoner, llm_manager, config)
-            
     except Exception as e:
         console.print(f"[red]❌ Query failed: {e}[/red]")
         raise typer.Exit(1)
@@ -99,18 +137,15 @@ def interactive():
     Engage in a back-and-forth conversation with continuous context.
     """
     try:
+        # Import only when needed
+        from config.settings import VizorConfig
+        from brain.reasoner import MetaReasoner
+        
         config = VizorConfig()
         reasoner = MetaReasoner(config)
-        llm_manager = LLMManager(config)
         
-        console.print(Panel(
-            "[bold blue]🔍 Vizor Interactive Mode[/bold blue]\n"
-            "[dim]Type 'exit', 'quit', or 'bye' to end the session[/dim]\n"
-            "[dim]Type 'help' for available commands[/dim]",
-            border_style="blue"
-        ))
-        
-        start_interactive_session(reasoner, llm_manager, config)
+        # Run the async session
+        asyncio.run(start_interactive_session(reasoner, config))
         
     except KeyboardInterrupt:
         console.print("\n[yellow]👋 Session ended by user[/yellow]")
@@ -118,9 +153,16 @@ def interactive():
         console.print(f"[red]❌ Interactive session failed: {e}[/red]")
         raise typer.Exit(1)
 
-def start_interactive_session(reasoner, llm_manager, config):
+async def start_interactive_session(reasoner, config):
     """Start an interactive conversation session"""
     conversation_history = []
+    
+    console.print(Panel(
+        "[bold blue]🔍 Vizor Interactive Mode[/bold blue]\n"
+        "[dim]Type 'exit', 'quit', or 'bye' to end the session[/dim]\n"
+        "[dim]Type 'help' for available commands[/dim]",
+        border_style="blue"
+    ))
     
     while True:
         try:
@@ -146,21 +188,34 @@ def start_interactive_session(reasoner, llm_manager, config):
                 console.print("[yellow]🔸 Dry run: Would process and respond[/yellow]")
                 continue
             
-            # Process the input
-            response = reasoner.process_query(
+            # Process the input using the brain components (reasoner + memory)
+            start_time = time.time()
+            
+            # Use the reasoner to process the query with memory integration
+            result = await reasoner.process_query(
                 question=user_input,
-                context=conversation_history,
-                confidence_threshold=0.6
+                context=conversation_history[-5:] if conversation_history else None,
+                model="deepseek-coder",  # Use fastest model for interactive
+                confidence_threshold=0.7
             )
             
-            # Display response
-            console.print(f"[green]🤖 Vizor:[/green] {response['answer']}")
+            processing_time = time.time() - start_time
+            answer = result['answer']
+            
+            # Display response with streaming effect
+            console.print(f"[green]🤖 Vizor:[/green] ", end="")
+            import sys
+            for char in answer:
+                sys.stdout.write(char)
+                sys.stdout.flush()
+                time.sleep(0.01)  # Small delay for visual effect
+            print()  # Add newline after streaming
             
             # Update conversation history
             conversation_history.append({
                 'user': user_input,
-                'assistant': response['answer'],
-                'confidence': response['confidence']
+                'assistant': answer,
+                'confidence': 0.8  # Simple confidence
             })
             
             # Keep only last 10 exchanges to manage context

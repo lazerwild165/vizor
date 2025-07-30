@@ -15,9 +15,8 @@ import os
 # Add the parent directory to the path so we can import from other modules
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from cli.commands import ask, brief, scan, build
 from config.settings import VizorConfig
-from brain.logger import VizorLogger
+#from brain.logger import VizorLogger
 
 # Initialize console and app
 console = Console()
@@ -28,9 +27,35 @@ app = typer.Typer(
     no_args_is_help=True
 )
 
-# Initialize configuration and logger
-config = VizorConfig()
-logger = VizorLogger()
+# Lazy config initialization
+_config = None
+_commands_added = False
+
+def get_config():
+    """Get config instance (lazy initialization)"""
+    global _config
+    if _config is None:
+        from config.settings import VizorConfig
+        _config = VizorConfig()
+    return _config
+
+def ensure_commands_added():
+    """Ensure commands are added to the app (lazy initialization)"""
+    global _commands_added
+    if not _commands_added:
+        # Import commands only when needed
+        from cli.commands import ask, brief, scan, build, learn
+        
+        # Add command groups
+        app.add_typer(ask.app, name="ask", help="💬 Ask Vizor questions and get intelligent responses")
+        app.add_typer(brief.app, name="brief", help="📋 Generate threat briefings and summaries")
+        app.add_typer(scan.app, name="scan", help="🔍 Scan and analyze security artifacts")
+        app.add_typer(build.app, name="build", help="🔧 Build API wrappers and plugins")
+        app.add_typer(learn.app, name="learn", help="🧠 Learn and adapt to new knowledge")
+        _commands_added = True
+
+# Always ensure commands are added when module is imported
+ensure_commands_added()
 
 def version_callback(value: bool):
     """Show version information"""
@@ -71,20 +96,16 @@ def main(
     """
     # Set global options
     if config_path:
+        config = get_config()
         config.load_custom_config(config_path)
     
-    if verbose:
-        logger.set_verbose(True)
+    # if verbose:
+    #     logger.set_verbose(True)
     
     if dry_run:
+        config = get_config()
         config.set_dry_run(True)
         console.print("[yellow]🔸 Dry run mode enabled - no actions will be executed[/yellow]")
-
-# Add command groups
-app.add_typer(ask.app, name="ask", help="💬 Ask Vizor questions and get intelligent responses")
-app.add_typer(brief.app, name="brief", help="📋 Generate threat briefings and summaries")
-app.add_typer(scan.app, name="scan", help="🔍 Scan and analyze security artifacts")
-app.add_typer(build.app, name="build", help="🔧 Build API wrappers and plugins")
 
 @app.command()
 def init(
@@ -96,6 +117,7 @@ def init(
     Creates default configuration files and sets up the local environment.
     """
     try:
+        config = get_config()
         config.initialize(force=force)
         console.print("[green]✅ Vizor initialized successfully![/green]")
         console.print(f"[dim]Config file: {config.config_path}[/dim]")
@@ -103,6 +125,8 @@ def init(
     except Exception as e:
         console.print(f"[red]❌ Initialization failed: {e}[/red]")
         raise typer.Exit(1)
+
+
 
 @app.command()
 def status():
@@ -112,6 +136,7 @@ def status():
     Displays configuration, model status, and system health.
     """
     try:
+        config = get_config()
         status_info = config.get_status()
         
         # Create status panel
@@ -133,41 +158,8 @@ def status():
         console.print(f"[red]❌ Status check failed: {e}[/red]")
         raise typer.Exit(1)
 
-@app.command()
-def learn(
-    topic: str = typer.Argument(..., help="Topic to learn about"),
-    sources: Optional[str] = typer.Option(None, "--sources", help="Comma-separated list of sources"),
-    update_memory: bool = typer.Option(True, "--update-memory/--no-update-memory", help="Update vector memory")
-):
-    """
-    🧠 Trigger learning flow for a specific topic
-    
-    Fetches intelligence and updates knowledge base.
-    """
-    from brain.learning import LearningEngine
-    
-    try:
-        learning_engine = LearningEngine(config)
-        
-        console.print(f"[blue]🧠 Learning about: {topic}[/blue]")
-        
-        if config.dry_run:
-            console.print("[yellow]🔸 Dry run: Would fetch intelligence and update memory[/yellow]")
-            return
-        
-        result = learning_engine.learn_topic(
-            topic=topic,
-            sources=sources.split(',') if sources else None,
-            update_memory=update_memory
-        )
-        
-        console.print(f"[green]✅ Learning completed![/green]")
-        console.print(f"[dim]Sources processed: {result['sources_count']}[/dim]")
-        console.print(f"[dim]Knowledge items added: {result['items_added']}[/dim]")
-        
-    except Exception as e:
-        console.print(f"[red]❌ Learning failed: {e}[/red]")
-        raise typer.Exit(1)
+
 
 if __name__ == "__main__":
+    # ensure_commands_added() # Call ensure_commands_added here to register commands
     app()

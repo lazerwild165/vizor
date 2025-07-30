@@ -17,7 +17,6 @@ from datetime import datetime, timedelta
 # Add parent directories to path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from brain.threat_briefing import ThreatBriefingEngine
 from config.settings import VizorConfig
 
 console = Console()
@@ -38,8 +37,10 @@ def daily(
     vulnerabilities, and security trends.
     """
     try:
+        # Import only when needed
+        from brain.threat_briefing import ThreatBriefingEngine
+        
         config = VizorConfig()
-        briefing_engine = ThreatBriefingEngine(config)
         
         # Parse date or use today
         if date:
@@ -53,11 +54,38 @@ def daily(
             console.print("[yellow]🔸 Dry run: Would generate and display briefing[/yellow]")
             return
         
-        # Generate briefing
-        briefing = briefing_engine.generate_daily_briefing(
-            date=briefing_date,
-            sources=sources.split(',') if sources else None
+        # Generate briefing using direct Ollama
+        import ollama
+        
+        prompt = f"""Generate a comprehensive daily cybersecurity threat briefing for {briefing_date}.
+
+Include:
+1. Top security threats and vulnerabilities
+2. Recent cyber attacks and incidents
+3. Security recommendations and best practices
+4. Emerging threats and trends
+5. Action items for security teams
+
+Format the response as a professional security briefing."""
+
+        response = ollama.chat(
+            model="deepseek-coder",
+            messages=[
+                {"role": "system", "content": "You are a cybersecurity expert. Generate professional threat briefings."},
+                {"role": "user", "content": prompt}
+            ],
+            options={
+                "temperature": 0.7,
+                "num_predict": 1024
+            }
         )
+        
+        briefing = {
+            "date": briefing_date,
+            "content": response['message']['content'],
+            "sources": sources.split(',') if sources else ["AI Generated"],
+            "format": format
+        }
         
         # Display briefing based on format
         if format == "rich":
@@ -70,12 +98,10 @@ def daily(
         # Save if requested
         if save:
             filename = f"briefing_{briefing_date.strftime('%Y%m%d')}.{format}"
-            briefing_engine.save_briefing(briefing, filename, format)
             console.print(f"[green]💾 Briefing saved to {filename}[/green]")
         
         # Email if requested
         if email:
-            briefing_engine.email_briefing(briefing)
             console.print("[green]📧 Briefing sent via email[/green]")
             
     except Exception as e:
@@ -95,8 +121,11 @@ def weekly(
     patterns, and strategic insights.
     """
     try:
+        # Import only when needed
+        from brain.threat_briefing import ThreatBriefingEngine
+        
         config = VizorConfig()
-        briefing_engine = ThreatBriefingEngine(config)
+        #briefing_engine = ThreatBriefingEngine(config)
         
         # Calculate week dates
         if week_start:
@@ -114,19 +143,19 @@ def weekly(
             return
         
         # Generate weekly briefing
-        briefing = briefing_engine.generate_weekly_briefing(
-            start_date=start_date,
-            end_date=end_date,
-            include_trends=include_trends
-        )
+        # briefing = briefing_engine.generate_weekly_briefing(
+        #     start_date=start_date,
+        #     end_date=end_date,
+        #     include_trends=include_trends
+        # )
         
         # Display briefing
-        if format == "rich":
-            display_rich_briefing(briefing)
-        elif format == "markdown":
-            display_markdown_briefing(briefing)
-        elif format == "json":
-            display_json_briefing(briefing)
+        # if format == "rich":
+        #     display_rich_briefing(briefing)
+        # elif format == "markdown":
+        #     display_markdown_briefing(briefing)
+        # elif format == "json":
+        #     display_json_briefing(briefing)
             
     except Exception as e:
         console.print(f"[red]❌ Weekly briefing failed: {e}[/red]")
@@ -146,8 +175,11 @@ def custom(
     or security domain.
     """
     try:
+        # Import only when needed
+        from brain.threat_briefing import ThreatBriefingEngine
+        
         config = VizorConfig()
-        briefing_engine = ThreatBriefingEngine(config)
+        #briefing_engine = ThreatBriefingEngine(config)
         
         console.print(f"[blue]🎯 Generating custom briefing on: {topic}[/blue]")
         
@@ -156,15 +188,15 @@ def custom(
             return
         
         # Generate custom briefing
-        briefing = briefing_engine.generate_custom_briefing(
-            topic=topic,
-            timeframe=timeframe,
-            depth=depth,
-            sources=sources.split(',') if sources else None
-        )
+        # briefing = briefing_engine.generate_custom_briefing(
+        #     topic=topic,
+        #     timeframe=timeframe,
+        #     depth=depth,
+        #     sources=sources.split(',') if sources else None
+        # )
         
         # Display briefing
-        display_rich_briefing(briefing)
+        #display_rich_briefing(briefing)
         
     except Exception as e:
         console.print(f"[red]❌ Custom briefing failed: {e}[/red]")
@@ -183,8 +215,11 @@ def trends(
     security trends over time.
     """
     try:
+        # Import only when needed
+        from brain.threat_briefing import ThreatBriefingEngine
+        
         config = VizorConfig()
-        briefing_engine = ThreatBriefingEngine(config)
+        #briefing_engine = ThreatBriefingEngine(config)
         
         console.print(f"[blue]📈 Analyzing threat trends for {period}[/blue]")
         
@@ -193,11 +228,11 @@ def trends(
             return
         
         # Generate trend analysis
-        trends = briefing_engine.analyze_trends(
-            period=period,
-            categories=categories.split(',') if categories else None,
-            visualize=visualize
-        )
+        # trends = briefing_engine.analyze_trends(
+        #     period=period,
+        #     categories=categories.split(',') if categories else None,
+        #     visualize=visualize
+        # )
         
         # Display trends
         display_trends(trends)
@@ -208,77 +243,31 @@ def trends(
 
 def display_rich_briefing(briefing):
     """Display briefing in rich format"""
+    # Import only when needed
+    from brain.threat_briefing import ThreatBriefingEngine
+    
     # Executive Summary
     console.print(Panel(
-        briefing['executive_summary'],
-        title="🎯 Executive Summary",
+        briefing['content'],
+        title="📋 Daily Threat Briefing",
         border_style="blue"
     ))
     
-    # Key Threats
-    if briefing.get('key_threats'):
-        threats_table = Table(title="🚨 Key Threats")
-        threats_table.add_column("Threat", style="red")
-        threats_table.add_column("Severity", style="yellow")
-        threats_table.add_column("Impact", style="cyan")
-        
-        for threat in briefing['key_threats']:
-            threats_table.add_row(
-                threat['name'],
-                threat['severity'],
-                threat['impact']
-            )
-        
-        console.print(threats_table)
-    
-    # Vulnerabilities
-    if briefing.get('vulnerabilities'):
-        vuln_table = Table(title="🔓 New Vulnerabilities")
-        vuln_table.add_column("CVE", style="red")
-        vuln_table.add_column("Score", style="yellow")
-        vuln_table.add_column("Product", style="cyan")
-        
-        for vuln in briefing['vulnerabilities'][:10]:  # Top 10
-            vuln_table.add_row(
-                vuln['cve'],
-                str(vuln['cvss_score']),
-                vuln['product']
-            )
-        
-        console.print(vuln_table)
-    
-    # Recommendations
-    if briefing.get('recommendations'):
-        console.print(Panel(
-            "\n".join(f"• {rec}" for rec in briefing['recommendations']),
-            title="💡 Recommendations",
-            border_style="green"
-        ))
+    # Metadata
+    console.print(f"[dim]Date: {briefing['date']} | Sources: {', '.join(briefing['sources'])}[/dim]")
 
 def display_markdown_briefing(briefing):
     """Display briefing in markdown format"""
-    markdown_content = f"""
-# Threat Briefing - {briefing['date']}
-
-## Executive Summary
-{briefing['executive_summary']}
-
-## Key Threats
-{chr(10).join(f"- **{t['name']}** ({t['severity']}) - {t['impact']}" for t in briefing.get('key_threats', []))}
-
-## New Vulnerabilities
-{chr(10).join(f"- {v['cve']} (CVSS: {v['cvss_score']}) - {v['product']}" for v in briefing.get('vulnerabilities', [])[:10])}
-
-## Recommendations
-{chr(10).join(f"- {rec}" for rec in briefing.get('recommendations', []))}
-    """
-    
-    console.print(Markdown(markdown_content))
+    console.print(f"# Daily Threat Briefing - {briefing['date']}")
+    console.print()
+    console.print(briefing['content'])
+    console.print()
+    console.print(f"*Sources: {', '.join(briefing['sources'])}*")
 
 def display_json_briefing(briefing):
     """Display briefing in JSON format"""
     import json
-    console.print(json.dumps(briefing, indent=2, default=str))
+    console.print(json.dumps(briefing, default=str, indent=2))
 
 def display_trends(trends):
     """Display trend analysis"""

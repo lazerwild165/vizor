@@ -31,17 +31,14 @@ class VectorMemory:
             path=str(self.db_path),
             settings=Settings(
                 anonymized_telemetry=False,
-                allow_reset=True
+                allow_reset=True,
+                is_persistent=True
             )
         )
         
-        # Initialize embedding model
-        self.embedding_model = SentenceTransformer(
-            config.vector_config.embedding_model
-        )
-        
-        # Get or create collection
-        self.collection = self._get_or_create_collection()
+        # Lazy initialization of embedding model and collection
+        self._embedding_model = None
+        self._collection = None
     
     def _get_or_create_collection(self):
         """Get or create the main knowledge collection"""
@@ -56,6 +53,33 @@ class VectorMemory:
             )
         
         return collection
+    
+    @property
+    def embedding_model(self):
+        """Lazy initialization of embedding model"""
+        if self._embedding_model is None:
+            try:
+                # Try to use a local model first, or create a simple one
+                self._embedding_model = SentenceTransformer(
+                    self.config.vector_config.embedding_model
+                )
+            except Exception as e:
+                print(f"Warning: Could not load embedding model: {e}")
+                print("Using dummy embedding model - RAG functionality will be limited")
+                # Return a dummy model that returns zeros
+                class DummyEmbeddingModel:
+                    def encode(self, text):
+                        import numpy as np
+                        return np.zeros(384)  # Standard embedding size
+                self._embedding_model = DummyEmbeddingModel()
+        return self._embedding_model
+    
+    @property
+    def collection(self):
+        """Lazy initialization of collection"""
+        if self._collection is None:
+            self._collection = self._get_or_create_collection()
+        return self._collection
     
     async def add_document(
         self, 

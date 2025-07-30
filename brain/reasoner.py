@@ -15,7 +15,7 @@ import re
 
 from models.llm_manager import LLMManager, TaskType
 from brain.memory import VectorMemory
-from brain.gap_detector import KnowledgeGapDetector
+from brain.gap_detector import GapDetector
 
 @dataclass
 class QueryContext:
@@ -60,11 +60,26 @@ class MetaReasoner:
     
     def __init__(self, config):
         self.config = config
-        self.llm_manager = LLMManager(config)
-        self.vector_memory = VectorMemory(config)
-        self.gap_detector = KnowledgeGapDetector(config)
+        self._llm_manager = None  # Lazy init
+        self._vector_memory = None  # Lazy init
+        self.gap_detector = GapDetector(config)
         self.conversation_memory = {}
         
+    @property
+    def llm_manager(self):
+        """Lazy initialization of LLM manager"""
+        if self._llm_manager is None:
+            from models.llm_manager import LLMManager
+            self._llm_manager = LLMManager(self.config)
+        return self._llm_manager
+        
+    @property
+    def vector_memory(self):
+        if self._vector_memory is None:
+            from brain.memory import VectorMemory
+            self._vector_memory = VectorMemory(self.config)
+        return self._vector_memory
+
     async def process_query(
         self,
         question: str,
@@ -73,7 +88,7 @@ class MetaReasoner:
         confidence_threshold: float = 0.7
     ) -> Dict[str, Any]:
         """
-        Main entry point for processing user queries
+        Process query with memory integration and knowledge retrieval
         
         Args:
             question: User's question or request
@@ -87,63 +102,82 @@ class MetaReasoner:
         start_time = time.time()
         
         try:
-            # Step 1: Analyze the query
-            query_analysis = await self._analyze_query(question, context)
+            # Use specified model or default to mistral
+            selected_model = model or "mistral"
             
-            # Step 2: Check existing knowledge and detect gaps
-            knowledge_check = await self._check_knowledge_base(question, query_analysis)
-            
-            # Step 3: Determine task type and select appropriate model
-            task_type = self._determine_task_type(question, query_analysis)
-            selected_model = model or self.llm_manager.select_best_model(
-                task_type, 
-                len(question) // 4
+            # Search vector memory for relevant knowledge
+            relevant_docs = await self.vector_memory.search(
+                query=question,
+                top_k=3,
+                min_similarity=0.3
             )
             
-            # Step 4: Generate response using selected model
-            response = await self._generate_response(
-                question, 
-                query_analysis, 
-                knowledge_check, 
-                task_type, 
-                selected_model
+            # Build context from relevant documents
+            context_text = ""
+            sources_consulted = []
+            if relevant_docs:
+                context_text = "\n\nRelevant information from knowledge base:\n"
+                for doc in relevant_docs:
+                    context_text += f"- {doc['content'][:300]}...\n"
+                    if 'source' in doc['metadata']:
+                        sources_consulted.append(doc['metadata']['source'])
+            
+            # Build conversation history context
+            conversation_context = ""
+            if context:
+                conversation_context = "\n\nRecent conversation context:\n"
+                for exchange in context[-3:]:  # Last 3 exchanges
+                    conversation_context += f"User: {exchange.get('user', '')}\n"
+                    conversation_context += f"Assistant: {exchange.get('assistant', '')}\n"
+            
+            # Create enhanced prompt with context
+            enhanced_prompt = f"""You are a helpful cybersecurity assistant. Provide clear, accurate answers based on the available information.
+
+{context_text}
+{conversation_context}
+
+Question: {question}
+
+Please provide a comprehensive answer based on the available information. If you have specific knowledge about the topic from the context provided, use it to give a detailed response."""
+
+            # Call Ollama with enhanced context
+            import ollama
+            response = ollama.chat(
+                model=selected_model,
+                messages=[
+                    {"role": "system", "content": "You are a helpful cybersecurity assistant. Provide clear, accurate answers."},
+                    {"role": "user", "content": enhanced_prompt}
+                ],
+                options={
+                    "temperature": 0.7,
+                    "num_predict": 1024
+                }
             )
-            
-            # Step 5: Evaluate confidence and detect gaps
-            confidence_assessment = await self._assess_confidence(
-                question, 
-                response, 
-                knowledge_check
-            )
-            
-            # Step 6: Handle low confidence scenarios
-            if confidence_assessment['confidence'] < confidence_threshold:
-                gap_analysis = await self._handle_low_confidence(
-                    question, 
-                    response, 
-                    confidence_assessment
-                )
-                knowledge_gaps = gap_analysis['gaps']
-            else:
-                knowledge_gaps = []
-            
-            # Step 7: Update memory and learning
-            await self._update_memory(question, response, confidence_assessment)
             
             processing_time = time.time() - start_time
             
-            return {
-                'answer': response['content'],
-                'confidence': confidence_assessment['confidence'],
+            # Calculate confidence based on available knowledge
+            confidence = min(0.9, 0.5 + (len(relevant_docs) * 0.1))
+            
+            # Return response with metadata
+            result = {
+                'answer': response['message']['content'],
+                'confidence': confidence,
                 'model': selected_model,
-                'model_display_name': self.llm_manager.models.get(selected_model, {}).display_name,
-                'task_type': task_type.value,
+                'model_display_name': selected_model.title(),
+                'task_type': 'reasoning',
                 'processing_time': processing_time,
-                'knowledge_gaps': knowledge_gaps,
-                'reasoning_chain': confidence_assessment.get('reasoning_steps', []),
-                'sources_consulted': knowledge_check.get('sources', []),
-                'suggested_actions': confidence_assessment.get('suggested_actions', [])
+                'knowledge_gaps': [] if relevant_docs else ['no_relevant_knowledge'],
+                'reasoning_chain': [f"Found {len(relevant_docs)} relevant documents", f"Confidence: {confidence:.2f}"],
+                'sources_consulted': sources_consulted,
+                'suggested_actions': []
             }
+            
+            # Add learning suggestions if confidence is low
+            if confidence < confidence_threshold:
+                result['suggested_actions'].append(f"Consider running: vizor learn '{question[:50]}...'")
+            
+            return result
             
         except Exception as e:
             processing_time = time.time() - start_time
@@ -155,8 +189,27 @@ class MetaReasoner:
                 'task_type': 'error',
                 'processing_time': processing_time,
                 'knowledge_gaps': ['error_handling'],
-                'error': str(e)
+                'reasoning_chain': [],
+                'sources_consulted': [],
+                'suggested_actions': []
             }
+    
+    async def _background_tasks(self, question: str, response: Dict, confidence: float, query_analysis: Dict):
+        """Run heavy tasks in background without blocking the response"""
+        try:
+            # Background task 1: Knowledge base check
+            knowledge_check = await self._check_knowledge_base(question, query_analysis)
+            
+            # Background task 2: Update memory
+            await self._update_memory(question, response, {'confidence': confidence})
+            
+            # Background task 3: Log gaps if confidence is low
+            if confidence < 0.7:
+                await self._log_knowledge_gaps([f"low_confidence_{question[:50]}"])
+                
+        except Exception as e:
+            # Silently fail background tasks - don't affect user experience
+            pass
     
     async def _analyze_query(self, question: str, context: Any) -> Dict[str, Any]:
         """Analyze the incoming query for complexity, domain, and intent"""
@@ -181,9 +234,10 @@ class MetaReasoner:
         """
         
         try:
+            # Let the LLM manager select the best available model
             response = await self.llm_manager.generate_response(
                 prompt=analysis_prompt,
-                model_name="mistral",  # Use Mistral for reasoning
+                model_name=None,  # Let it auto-select
                 task_type=TaskType.REASONING,
                 temperature=0.3
             )
@@ -445,6 +499,10 @@ class MetaReasoner:
         except Exception as e:
             print(f"Warning: Failed to log knowledge gaps: {e}")
     
+    async def rag_search(self, query: str, top_k: int = 5, filter_domain: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Explicitly perform a RAG search using the vector memory"""
+        return await self.vector_memory.search(query=query, top_k=top_k, filter_domain=filter_domain)
+
     def save_conversation(self, question: str, response: Dict):
         """Save conversation for context in future interactions"""
         

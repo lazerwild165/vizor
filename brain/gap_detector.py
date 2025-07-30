@@ -11,7 +11,7 @@ from typing import Dict, List, Any, Optional
 from pathlib import Path
 import time
 
-class KnowledgeGapDetector:
+class GapDetector:
     """
     Detects knowledge gaps in responses and triggers learning
     

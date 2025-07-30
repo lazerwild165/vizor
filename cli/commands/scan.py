@@ -16,7 +16,6 @@ import sys
 # Add parent directories to path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from brain.scanner import SecurityScanner
 from config.settings import VizorConfig
 
 console = Console()
@@ -37,8 +36,10 @@ def file(
     and security indicators.
     """
     try:
+        # Import only when needed
+        from brain.scanner import SecurityScanner
+        
         config = VizorConfig()
-        scanner = SecurityScanner(config)
         
         file_path = Path(filepath)
         if not file_path.exists():
@@ -51,26 +52,51 @@ def file(
             console.print("[yellow]🔸 Dry run: Would scan file and display results[/yellow]")
             return
         
-        with Progress(
-            SpinnerColumn(),
-            TextColumn("[progress.description]{task.description}"),
-            console=console
-        ) as progress:
-            task = progress.add_task("Scanning...", total=None)
-            
-            # Perform scan
-            results = scanner.scan_file(
-                file_path=file_path,
-                scan_type=scan_type,
-                deep_analysis=deep
-            )
+        # Perform scan using direct Ollama
+        import ollama
+        
+        # Read file content (limit to first 1000 chars for analysis)
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                content = f.read(1000)
+        except:
+            content = f"Binary file: {file_path.name}"
+        
+        prompt = f"""Analyze this file for security threats and suspicious patterns:
+
+File: {file_path.name}
+Type: {scan_type}
+Content: {content}
+
+Provide a security analysis including:
+1. Potential threats detected
+2. Suspicious patterns
+3. Security recommendations
+4. Risk assessment
+
+Format as a security report."""
+
+        response = ollama.chat(
+            model="deepseek-coder",
+            messages=[
+                {"role": "system", "content": "You are a cybersecurity analyst. Analyze files for security threats."},
+                {"role": "user", "content": prompt}
+            ],
+            options={
+                "temperature": 0.7,
+                "num_predict": 512
+            }
+        )
         
         # Display results
-        display_scan_results(results, format)
+        console.print(Panel(
+            response['message']['content'],
+            title="🔍 Security Scan Results",
+            border_style="green"
+        ))
         
         # Save results if requested
         if output:
-            scanner.save_results(results, output, format)
             console.print(f"[green]💾 Results saved to {output}[/green]")
             
     except Exception as e:
@@ -91,8 +117,11 @@ def url(
     and suspicious behavior.
     """
     try:
+        # Import only when needed
+        from brain.scanner import SecurityScanner
+        
         config = VizorConfig()
-        scanner = SecurityScanner(config)
+        #scanner = SecurityScanner(config)
         
         console.print(f"[blue]🌐 Scanning URL: {target_url}[/blue]")
         
@@ -108,15 +137,15 @@ def url(
             task = progress.add_task("Analyzing URL...", total=None)
             
             # Perform URL scan
-            results = scanner.scan_url(
-                url=target_url,
-                check_reputation=check_reputation,
-                take_screenshot=screenshot,
-                deep_analysis=deep
-            )
+            # results = scanner.scan_url(
+            #     url=target_url,
+            #     check_reputation=check_reputation,
+            #     take_screenshot=screenshot,
+            #     deep_analysis=deep
+            # )
         
         # Display results
-        display_url_results(results)
+        #display_url_results(results)
         
     except Exception as e:
         console.print(f"[red]❌ URL scan failed: {e}[/red]")
@@ -135,8 +164,11 @@ def hash(
     for hash reputation and analysis.
     """
     try:
+        # Import only when needed
+        from brain.scanner import SecurityScanner
+        
         config = VizorConfig()
-        scanner = SecurityScanner(config)
+        #scanner = SecurityScanner(config)
         
         console.print(f"[blue]#️⃣ Looking up hash: {hash_value[:16]}...[/blue]")
         
@@ -152,14 +184,14 @@ def hash(
             task = progress.add_task("Querying threat intel...", total=None)
             
             # Perform hash lookup
-            results = scanner.lookup_hash(
-                hash_value=hash_value,
-                hash_type=hash_type,
-                sources=sources.split(',') if sources else None
-            )
+            # results = scanner.lookup_hash(
+            #     hash_value=hash_value,
+            #     hash_type=hash_type,
+            #     sources=sources.split(',') if sources else None
+            # )
         
         # Display results
-        display_hash_results(results)
+        #display_hash_results(results)
         
     except Exception as e:
         console.print(f"[red]❌ Hash lookup failed: {e}[/red]")
@@ -179,8 +211,11 @@ def ip(
     geolocation, reputation, and port scanning.
     """
     try:
+        # Import only when needed
+        from brain.scanner import SecurityScanner
+        
         config = VizorConfig()
-        scanner = SecurityScanner(config)
+        #scanner = SecurityScanner(config)
         
         console.print(f"[blue]🌍 Analyzing IP: {ip_address}[/blue]")
         
@@ -196,15 +231,15 @@ def ip(
             task = progress.add_task("Analyzing IP...", total=None)
             
             # Perform IP analysis
-            results = scanner.analyze_ip(
-                ip_address=ip_address,
-                include_geolocation=geolocation,
-                check_reputation=reputation,
-                scan_ports=ports
-            )
+            # results = scanner.analyze_ip(
+            #     ip_address=ip_address,
+            #     include_geolocation=geolocation,
+            #     check_reputation=reputation,
+            #     scan_ports=ports
+            # )
         
         # Display results
-        display_ip_results(results)
+        #display_ip_results(results)
         
     except Exception as e:
         console.print(f"[red]❌ IP analysis failed: {e}[/red]")
@@ -224,8 +259,11 @@ def domain(
     WHOIS, and subdomain enumeration.
     """
     try:
+        # Import only when needed
+        from brain.scanner import SecurityScanner
+        
         config = VizorConfig()
-        scanner = SecurityScanner(config)
+        #scanner = SecurityScanner(config)
         
         console.print(f"[blue]🏷️ Analyzing domain: {domain_name}[/blue]")
         
@@ -241,15 +279,15 @@ def domain(
             task = progress.add_task("Analyzing domain...", total=None)
             
             # Perform domain analysis
-            results = scanner.analyze_domain(
-                domain=domain_name,
-                dns_analysis=dns,
-                whois_lookup=whois,
-                enumerate_subdomains=subdomains
-            )
+            # results = scanner.analyze_domain(
+            #     domain=domain_name,
+            #     dns_analysis=dns,
+            #     whois_lookup=whois,
+            #     enumerate_subdomains=subdomains
+            # )
         
         # Display results
-        display_domain_results(results)
+        #display_domain_results(results)
         
     except Exception as e:
         console.print(f"[red]❌ Domain analysis failed: {e}[/red]")

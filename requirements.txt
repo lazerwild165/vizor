@@ -18,9 +18,13 @@ python-dotenv==1.0.0
 pydantic==2.5.0
 
 # API and Plugin Support
-httpx==0.25.0
+httpx==0.25.2
 aiohttp==3.9.0
 openapi-spec-validator==0.7.1
+dnspython==2.4.2
+python-whois==0.8.0
+feedparser==6.0.10
+urllib3==2.0.7
 
 # Security and Cryptography
 cryptography==41.0.7
@@ -43,3 +47,7 @@ pytest-asyncio==0.21.1
 black==23.11.0
 flake8==6.1.0
 mypy==1.7.0
+
+transformers==4.26.1
+huggingface_hub==0.14.1
+tokenizers==0.13.3
