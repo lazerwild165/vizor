@@ -50,6 +50,14 @@ chroma_db/
 gap_memory.json
 *.log
 
+# Test files
+*_test.py
+test_*.py
+comprehensive_test.py
+quick_test.py
+test_performance.py
+test_input.txt
+
 # API Keys and secrets
 .env
 config/secrets.yaml

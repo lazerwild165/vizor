@@ -1,5 +1,0 @@
-hey
-What is a firewall?
-How does encryption work?
-help
-bye
